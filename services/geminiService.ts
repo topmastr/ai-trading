@@ -1,8 +1,13 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { TradeSetup, NewsItem, TradingStyle } from "../types";
 
-// Initialize with env var, fallback to empty
-let DYNAMIC_API_KEY = process.env.API_KEY || '';
+// Initialize with env var safely, fallback to empty
+let DYNAMIC_API_KEY = '';
+try {
+  DYNAMIC_API_KEY = process.env.API_KEY || '';
+} catch (e) {
+  // process undefined in browser
+}
 
 // Persistence Key
 const STORAGE_KEY = 'xau_intel_api_key';
@@ -23,134 +28,185 @@ export const setApiKey = (key: string) => {
   }
 };
 
-export const hasApiKey = () => !!DYNAMIC_API_KEY;
+export const hasApiKey = () => !!DYNAMIC_API_KEY && DYNAMIC_API_KEY.length > 5;
 
 /**
- * Analyzes a chart screenshot (1H) to generate a professional ICT/Smart Money trade setup.
+ * Utility for retrying API calls on transient errors (429, 500, 503)
+ */
+async function callWithRetry<T>(fn: () => Promise<T>, maxRetries = 3, delay = 2000): Promise<T> {
+  let lastError: any;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      const status = error?.status || (error?.message?.match(/\d{3}/)?.[0] ? parseInt(error.message.match(/\d{3}/)?.[0]) : 0);
+      const message = error?.message || "";
+      
+      // Retry on Quota Exceeded (429), Internal Error (500), or Service Overloaded (503)
+      if (status === 429 || status === 500 || status === 503 || 
+          message.includes("429") || message.includes("500") || message.includes("503") || 
+          message.toLowerCase().includes("overloaded") || message.toLowerCase().includes("internal error")) {
+        console.warn(`API Error ${status} (Attempt ${i + 1}/${maxRetries}). Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; 
+        continue;
+      }
+      throw error; 
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Professional XAUUSD Chart Analyzer using Gemini 3 Pro
  */
 export const analyzeChartImage = async (base64Image: string, style: TradingStyle = 'DAY_TRADING'): Promise<TradeSetup> => {
   if (!DYNAMIC_API_KEY) throw new Error("CRITICAL: API Key is missing. Please configure it in System Settings.");
 
   const ai = new GoogleGenAI({ apiKey: DYNAMIC_API_KEY });
-
-  // Remove header if present (e.g., "data:image/png;base64,")
   const cleanBase64 = base64Image.split(',')[1] || base64Image;
 
-  // Specific instructions based on trading style
-  let strategyFocus = "";
-  if (style === 'SCALPING') {
-    strategyFocus = "Focus on M1/M5/M15 timeframes. Look for quick Liquidity Sweeps and immediate Displacement. Targets should be near-term liquidity (10-30 pips). Stop Loss must be tight.";
-  } else if (style === 'DAY_TRADING') {
-    strategyFocus = "Focus on H1/H4 market structure. Look for Daily Bias alignment, Session Liquidity (London/NY Open), and FVG retests. Targets are previous session Highs/Lows.";
-  } else if (style === 'SWING') {
-    strategyFocus = "Focus on Daily/Weekly Order Blocks. Ignore intraday noise. Look for major trend reversals or continuations. Targets are major Swing Highs/Lows (100+ pips).";
-  }
-
   const prompt = `
-    SYSTEM IDENTITY: You are XAU-INTEL AI, the world's most advanced Gold (XAUUSD) trading algorithm.
+    SYSTEM IDENTITY: You are XAU-INTEL CORE AI, the most advanced Gold (XAUUSD) trading algorithm.
     TRADING STYLE: **${style}**
-    ${strategyFocus}
+    
+    STRATEGIES TO APPLY:
+    1. ICT/SMC: Liquidity Sweeps (BSL/SSL), Order Blocks (OB), Fair Value Gaps (FVG), Market Structure Shift (MSS).
+    2. R3D System: 3-day cycle analysis and depth/delivery metrics.
+    3. SMS Strategy: Focus on Structure, Momentum, and detecting Smart Money Traps.
+    4. Support & Resistance: High-timeframe supply/demand zones.
 
-    TRAINING DATA: You have been trained on 20 years of tick-by-tick XAUUSD historical data, institutional order flow logs, and central bank policies.
-    STRATEGY: You strictly apply ICT (Inner Circle Trader) and SMC (Smart Money Concepts).
-
-    TASK: Perform a deep computer-vision analysis on this chart image.
-
-    THINKING PROCESS (INTERNAL):
-    1. Identify Market Structure (Bullish/Bearish) relative to the selected TRADING STYLE.
-    2. Locate Liquidity Pools (BSL/SSL) that have been swept or are targets.
-    3. Identify the specific PD Array (Order Block, FVG, Breaker) causing the reaction.
-    4. Calculate precise fibonacci levels for entry/exit.
-    5. Determine invalidation level (Stop Loss) strictly based on structure.
-
-    MANDATORY CHECKS (FAIL IF NOT MET):
-    1. **Structure**: Is there a clear Break of Structure (BOS) or Market Structure Shift (MSS)?
-    2. **Liquidity**: Has Buy-side (BSL) or Sell-side Liquidity (SSL) been swept?
-    3. **POI**: Is price reacting to a high-probability Order Block (OB) or Fair Value Gap (FVG)?
-    4. **Premium/Discount**: Is the setup in a valid Premium (for shorts) or Discount (for longs) zone?
-
-    STRICT FILTERING:
-    - If the setup is "choppy", "ranging without direction", or low probability (< 80%), RETURN "WAIT".
-    - Do not force a trade. Capital preservation is priority #1.
-
-    OUTPUT OBJECTIVES:
-    - **Entry**: Limit order at the specific PD Array (e.g., FVG Open).
-    - **Stop Loss**: Invalidation point (e.g., Swing High/Low).
-    - **Targets**: 
-        - TP1: First internal liquidity / Safe Take Profit.
-        - TP2: 1:3 Risk:Reward / Standard Target.
-        - TP3: External range liquidity / Runner.
+    TASK: Perform a deep computer-vision analysis on this chart.
+    Identify:
+    - Current Market Structure (Bullish/Bearish/Neutral).
+    - Liquidity pools that have been taken or are targets.
+    - Specific POI (Point of Interest) for entry.
+    - Risk/Reward metrics.
 
     RETURN FORMAT (JSON ONLY):
     {
       "type": "BUY" | "SELL" | "WAIT",
-      "entryPrice": "2345.50",
-      "stopLoss": "2340.00",
-      "takeProfit1": "2350.00",
-      "takeProfit2": "2360.00",
-      "takeProfit3": "2375.00",
-      "riskRewardRatio": "1:3.0",
-      "confidence": 92,
-      "reasoning": "Detailed breakdown in Arabic. Use ICT terms: 'Judas Swing detected', 'Mitigation of 4H OB', 'Displacement confirmed'.",
-      "timeframe": "15M",
-      "confluences": ["Liquidity Sweep", "Daily Bias Bullish", "FVG Inversion", "Volume Spike"],
-      "strategies": ["ICT Power of 3", "SMC Reversal"],
-      "session": "London Open",
-      "expected_return": "2.5%",
-      "max_drawdown": "12 pips"
+      "entryPrice": "string",
+      "stopLoss": "string",
+      "takeProfit1": "string",
+      "takeProfit2": "string",
+      "takeProfit3": "string",
+      "riskRewardRatio": "string",
+      "confidence": number,
+      "reasoning": "Detailed breakdown in Arabic and English technical terms.",
+      "timeframe": "string",
+      "confluences": ["string"],
+      "strategies": ["ICT", "SMS", "R3D"],
+      "session": "string",
+      "expected_return": "string",
+      "max_drawdown": "string"
     }
   `;
 
-  try {
+  return callWithRetry(async () => {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: {
         parts: [
-          {
-            inlineData: {
-              mimeType: 'image/png', 
-              data: cleanBase64
-            }
-          },
+          { inlineData: { mimeType: 'image/png', data: cleanBase64 } },
           { text: prompt }
         ]
       },
       config: {
         responseMimeType: 'application/json',
-        // Enable thinking to allow the model to reason before outputting JSON.
-        // This improves accuracy for complex chart analysis.
-        thinkingConfig: { thinkingBudget: 1024 }, 
-        systemInstruction: "You are a specialized Hedge Fund AI. Return RAW JSON only. No Markdown. No Explanations outside JSON."
+        thinkingConfig: { thinkingBudget: 1024 },
+        systemInstruction: "You are a professional Hedge Fund AI. Return RAW JSON only. Use technical ICT/SMC terminology."
       }
     });
 
-    let text = response.text;
-    if (!text) throw new Error("Neural Engine returned empty response.");
-
+    let text = response.text || "";
     text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    
     return JSON.parse(text) as TradeSetup;
-  } catch (error: any) {
-    console.error("AI Analysis Error Details:", error);
-    
-    let userMessage = "Analysis Failed: Neural Engine connection interrupted.";
-    const errString = error.message || error.toString();
+  });
+};
 
-    if (errString.includes("404") || errString.includes("not found")) {
-        userMessage = "Model Error: 'gemini-2.5-flash' unavailable. Please check your API access.";
-    } else if (errString.includes("403") || errString.includes("permission") || errString.includes("key")) {
-        userMessage = "Access Denied: Invalid API Key. Please verify settings.";
-    } else if (errString.includes("429") || errString.includes("Quota")) {
-        userMessage = "Quota Exceeded: Too many requests. Please wait a moment.";
-    } else if (errString.includes("fetch failed")) {
-        userMessage = "Network Error: Unable to connect to Google AI servers.";
-    } else {
-        userMessage = `System Error: ${errString.substring(0, 50)}...`;
+/**
+ * Text-to-Speech (TTS) for Trade Alerts
+ */
+export const playTradeAlert = async (trade: TradeSetup) => {
+  if (trade.type === 'WAIT') return;
+
+  const textToSay = `XAU Intel Signal Detected. ${trade.type} Gold at ${trade.entryPrice}. Target one at ${trade.takeProfit1}. Stop loss at ${trade.stopLoss}. Confidence ${trade.confidence} percent.`;
+
+  // Fallback to Web Speech API if Gemini TTS fails or if key is missing
+  const fallbackSpeech = () => {
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(textToSay);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
     }
-    
-    throw new Error(userMessage);
+  };
+
+  if (!DYNAMIC_API_KEY) {
+    fallbackSpeech();
+    return;
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: DYNAMIC_API_KEY });
+    const response = await callWithRetry(async () => {
+      return await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `Say clearly: ${textToSay}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
+      });
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (base64Audio) {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      const audioBuffer = await decodeAudioData(decode(base64Audio), audioContext, 24000, 1);
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start();
+    } else {
+      fallbackSpeech();
+    }
+  } catch (error) {
+    console.error("Gemini TTS Error, falling back to Web Speech API:", error);
+    fallbackSpeech();
   }
 };
+
+/**
+ * Audio Decoding Utilities
+ */
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
 
 /**
  * Fetches and analyzes fundamental news for Gold.
@@ -159,43 +215,34 @@ export const fetchMarketNews = async (): Promise<NewsItem[]> => {
   if (!DYNAMIC_API_KEY) return [];
 
   const ai = new GoogleGenAI({ apiKey: DYNAMIC_API_KEY });
-  const prompt = "Find breaking news for XAUUSD, USD Index (DXY), and Federal Reserve. Analyze sentiment impact on Gold price.";
+  const prompt = "Find breaking news for XAUUSD, DXY, CPI, and FOMC. Analyze the impact on Gold prices.";
 
-  try {
+  return callWithRetry(async () => {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
-        systemInstruction: `Return a JSON array of news items. 
-        Schema: [{"title": "string", "impact": "HIGH"|"MEDIUM"|"LOW", "summary": "string", "sentiment": "POSITIVE"|"NEGATIVE"|"NEUTRAL"}]
-        Strictly JSON.`
+        systemInstruction: `Return a JSON array. 
+        Schema: [{"title": "string", "impact": "HIGH"|"MEDIUM"|"LOW", "summary": "string", "sentiment": "POSITIVE"|"NEGATIVE"|"NEUTRAL"}]`
       }
     });
 
-    let text = response.text;
-    if (!text) return [];
-
+    let text = response.text || "";
     text = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
-    let news: NewsItem[] = [];
     try {
-        news = JSON.parse(text) as NewsItem[];
-    } catch (e) {
-        return [];
-    }
-    
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-    if (chunks && chunks.length > 0) {
+      const news = JSON.parse(text) as NewsItem[];
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+      if (chunks && chunks.length > 0) {
         return news.map((item, index) => ({
-            ...item,
-            url: chunks[index % chunks.length]?.web?.uri || ''
+          ...item,
+          url: chunks[index % chunks.length]?.web?.uri || ''
         }));
+      }
+      return news;
+    } catch (e) {
+      return [];
     }
-
-    return news;
-  } catch (error) {
-    console.error("News Engine Error:", error);
-    return [];
-  }
+  });
 };

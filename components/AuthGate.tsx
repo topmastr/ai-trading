@@ -81,9 +81,12 @@ const AuthGate: React.FC<AuthGateProps> = ({ onLogin }) => {
             </button>
           </div>
           
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-2">
             <p className="text-[10px] text-slate-600">
               Encrypted Connection (TLS 1.3) • 256-bit AES
+            </p>
+            <p className="text-[10px] text-slate-700 font-mono">
+              (Default Access: mastr333)
             </p>
           </div>
         </form>

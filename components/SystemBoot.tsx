@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, Cpu, Wifi, Database, Lock, Activity, Check, AlertTriangle } from 'lucide-react';
 import { SystemLog } from '../types';
+import { hasApiKey } from '../services/geminiService';
 
 interface SystemBootProps {
   onComplete: () => void;
@@ -33,10 +34,10 @@ const SystemBoot: React.FC<SystemBootProps> = ({ onComplete }) => {
       setProgress(30);
 
       // Step 3: API Check
-      if (process.env.API_KEY) {
+      if (hasApiKey()) {
         addLog('API_GATEWAY', 'Gemini Neural Engine Connected', 'OK');
       } else {
-        addLog('API_GATEWAY', 'API Key not found in ENV (Using Demo Mode)', 'WARN');
+        addLog('API_GATEWAY', 'API Key not found (Using Demo Mode)', 'WARN');
       }
       await new Promise(r => setTimeout(r, 500));
       setProgress(50);

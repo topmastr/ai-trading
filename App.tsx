@@ -7,7 +7,7 @@ import TradeHistory from './components/TradeHistory';
 import SystemBoot from './components/SystemBoot';
 import AuthGate from './components/AuthGate';
 import SettingsPanel from './components/SettingsPanel';
-import { BarChart3, Settings, User, Radio, Activity, Zap } from 'lucide-react';
+import { BarChart3, Settings, User, Radio, Activity, Zap, ShieldCheck } from 'lucide-react';
 import { TradeSetup } from './types';
 
 const App: React.FC = () => {
@@ -75,25 +75,28 @@ const App: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <h1 className="text-xl font-black tracking-tighter text-white leading-none">
-              XAU-INTEL <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-300 to-gold-600">PRO</span>
+              XAU-INTEL <span className="text-transparent bg-clip-text bg-gradient-to-r from-gold-300 to-gold-600 uppercase">Pro Core</span>
             </h1>
             <div className="flex items-center gap-2 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                <p className="text-[10px] text-slate-400 tracking-widest uppercase font-mono">System Online</p>
+                <p className="text-[10px] text-slate-400 tracking-widest uppercase font-mono">NEURAL NETWORK ACTIVE</p>
             </div>
           </div>
         </div>
         
         <div className="flex items-center gap-6">
-           {/* Balance Display */}
            <div className="hidden md:flex flex-col items-end">
-             <span className="text-[9px] text-slate-500 uppercase font-bold tracking-widest">Available Capital</span>
+             <span className="text-[9px] text-slate-500 uppercase font-bold tracking-widest">Master Balance</span>
              <span className="text-lg font-mono text-white font-bold tracking-wide">${accountBalance.toFixed(2)}</span>
            </div>
 
            <div className="h-8 w-px bg-white/10 hidden md:block"></div>
 
            <div className="flex items-center gap-3">
+               <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-slate-800/50 rounded-lg border border-white/5">
+                  <ShieldCheck className="w-4 h-4 text-gold-500" />
+                  <span className="text-[10px] font-bold text-slate-300">ICT Verified</span>
+               </div>
                <button 
                  onClick={() => setShowSettings(true)}
                  className="p-2.5 rounded-xl bg-slate-800/50 hover:bg-slate-700/50 hover:text-white text-slate-400 transition border border-white/5"
@@ -113,8 +116,7 @@ const App: React.FC = () => {
         {/* Top Row: Chart + Analyzer */}
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 h-auto xl:h-[650px]">
           {/* Chart (8 cols) */}
-          <div className="xl:col-span-8 h-[500px] xl:h-full relative group rounded-2xl overflow-hidden shadow-2xl border border-white/5">
-             <div className="absolute inset-0 bg-gold-500/5 pointer-events-none z-0"></div>
+          <div className="xl:col-span-8 h-[500px] xl:h-full relative group rounded-2xl overflow-hidden shadow-2xl border border-white/5 bg-black/40">
             <TradingViewChart />
           </div>
           
@@ -153,17 +155,17 @@ const App: React.FC = () => {
       <footer className="h-10 glass-panel border-t border-white/5 flex items-center justify-between px-6 text-[10px] text-slate-500 font-mono mt-auto backdrop-blur-md">
         <div className="flex items-center gap-6">
             <span className="flex items-center gap-2">
-                <Radio className="w-3 h-3 text-green-500" />
-                SIGNAL: STRONG (-85dBm)
+                <Radio className="w-3 h-3 text-green-500 animate-pulse" />
+                DXY MONITOR: STABLE
             </span>
             <span className="flex items-center gap-2">
                 <Activity className="w-3 h-3 text-gold-500" />
-                ENGINE: ONLINE
+                NEURAL LATENCY: 42ms
             </span>
         </div>
         <div className="flex items-center gap-2">
             <Zap className="w-3 h-3 text-yellow-500" />
-            <span>POWERED BY GOOGLE GEMINI 2.5</span>
+            <span>XAU-INTEL CORE V5.2 // MULTIMODAL PRO</span>
         </div>
       </footer>
     </div>

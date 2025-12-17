@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Upload, Cpu, AlertTriangle, CheckCircle, Target, Shield, Zap, Scan, Percent, Activity, DollarSign, Settings, BrainCircuit, Clock, Copy, Check, BarChart2, Layers, TrendingUp } from 'lucide-react';
-import { analyzeChartImage } from '../services/geminiService';
+import { Upload, Cpu, AlertTriangle, CheckCircle, Target, Shield, Zap, Scan, Percent, Activity, DollarSign, Settings, BrainCircuit, Clock, Copy, Check, BarChart2, Layers, TrendingUp, RefreshCcw, Volume2 } from 'lucide-react';
+import { analyzeChartImage, playTradeAlert } from '../services/geminiService';
 import { TradeSetup, AnalysisStatus, TradingStyle } from '../types';
 
 interface ImageAnalyzerProps {
@@ -15,6 +15,7 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
   const [result, setResult] = useState<TradeSetup | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [copied, setCopied] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   
   // Advanced Settings
   const [riskPercent, setRiskPercent] = useState<number>(2);
@@ -83,10 +84,23 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
       setResult(tradeWithTime);
       setStatus(AnalysisStatus.COMPLETED);
       onTradeGenerated(tradeWithTime);
+      
+      // Auto-speak on completion
+      playTradeAlert(tradeWithTime);
     } catch (err: any) {
       setStatus(AnalysisStatus.ERROR);
-      setErrorMsg(err.message || 'حدث خطأ غير معروف.');
+      let msg = err.message || 'Analysis interrupted.';
+      if (msg.includes('429')) msg = "Quota Exceeded: Too many requests. Our AI is retrying or needs a moment to cool down.";
+      if (msg.includes('503')) msg = "Server Overloaded: The AI engine is currently busy. Please try again in 30 seconds.";
+      setErrorMsg(msg);
     }
+  };
+
+  const handleSpeak = async () => {
+    if (!result || speaking) return;
+    setSpeaking(true);
+    await playTradeAlert(result);
+    setSpeaking(false);
   };
 
   const copyToClipboard = () => {
@@ -116,19 +130,18 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
             <div>
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
                     <Cpu className="w-5 h-5 text-gold-500 animate-pulse" />
-                    <span className="tracking-tight">XAU-INTEL <span className="text-gradient-gold font-black">AI</span></span>
+                    <span className="tracking-tight">XAU-INTEL <span className="text-gradient-gold font-black">AI CORE</span></span>
                 </h2>
                 <div className="flex items-center gap-2 mt-1">
                      <span className="text-[10px] bg-gold-500/10 text-gold-400 px-2 py-0.5 rounded border border-gold-500/20">
-                         GEMINI 2.5
+                         GEMINI 3 PRO
                      </span>
                      <span className="text-[10px] text-slate-400 font-mono">
-                         v5.0.0
+                         MULTIMODAL V5
                      </span>
                 </div>
             </div>
             
-            {/* Strategy Selector */}
             <div className="flex items-center bg-black/40 rounded-lg p-1 border border-white/5">
                 <button 
                     onClick={() => setStrategy('SCALPING')}
@@ -146,10 +159,8 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col p-5 gap-4 z-10 overflow-y-auto custom-scrollbar">
         
-        {/* Risk & Info Bar */}
         <div className="flex items-center justify-between">
              <div className="flex items-center gap-2">
                  <div className="bg-slate-800/50 p-1.5 rounded-lg border border-white/5">
@@ -170,19 +181,27 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
              </div>
              
              {result && (
-                 <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4">
-                     <span className="text-[10px] text-slate-400 uppercase tracking-widest">Confidence</span>
-                     <div className="flex items-center gap-1">
-                         <div className="h-1.5 w-16 bg-slate-800 rounded-full overflow-hidden">
-                             <div className="h-full bg-gradient-to-r from-red-500 to-green-500" style={{ width: `${result.confidence}%` }}></div>
-                         </div>
-                         <span className="text-xs font-bold text-white">{result.confidence}%</span>
+                 <div className="flex items-center gap-3">
+                     <button 
+                        onClick={handleSpeak}
+                        className={`p-2 rounded-lg border border-white/5 transition ${speaking ? 'bg-gold-500 text-black animate-bounce' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+                        title="Voice Alert"
+                     >
+                        <Volume2 className="w-4 h-4" />
+                     </button>
+                     <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-widest">Confidence</span>
+                        <div className="flex items-center gap-1">
+                            <div className="h-1.5 w-16 bg-slate-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-red-500 to-green-500" style={{ width: `${result.confidence}%` }}></div>
+                            </div>
+                            <span className="text-xs font-bold text-white">{result.confidence}%</span>
+                        </div>
                      </div>
                  </div>
              )}
         </div>
 
-        {/* Upload / Processing State */}
         {!result && (
             <div className={`relative flex-1 border border-dashed rounded-2xl flex flex-col items-center justify-center text-center transition-all duration-300 group cursor-pointer overflow-hidden ${
                 preview 
@@ -211,8 +230,8 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
                                         <BrainCircuit className="absolute inset-0 m-auto text-gold-500 w-10 h-10 animate-pulse" />
                                     </div>
                                     <div className="text-center space-y-1">
-                                        <p className="text-sm font-bold text-white tracking-widest animate-pulse">NEURAL PROCESSING</p>
-                                        <p className="text-xs text-gold-400 font-mono">Detecting Order Blocks...</p>
+                                        <p className="text-sm font-bold text-white tracking-widest animate-pulse uppercase">Neural XAU-CORE Scanning</p>
+                                        <p className="text-xs text-gold-400 font-mono">Applying ICT/SMS/R3D logic...</p>
                                     </div>
                                 </div>
                             </div>
@@ -221,11 +240,11 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
                 ) : (
                     <div className="relative z-10 space-y-4">
                         <div className="w-20 h-20 rounded-full bg-gradient-to-br from-slate-800 to-black border border-white/5 flex items-center justify-center mx-auto shadow-xl group-hover:scale-110 transition duration-500">
-                            <Upload className="w-8 h-8 text-slate-400 group-hover:text-gold-400 transition" />
+                            <Scan className="w-8 h-8 text-slate-400 group-hover:text-gold-400 transition" />
                         </div>
                         <div>
-                            <p className="text-lg font-bold text-white group-hover:text-gold-100 transition">Upload Chart</p>
-                            <p className="text-xs text-slate-400 mt-1">Supports H1 / H4 / Daily Timeframes</p>
+                            <p className="text-lg font-bold text-white group-hover:text-gold-100 transition">Drop XAUUSD Chart</p>
+                            <p className="text-xs text-slate-400 mt-1">Multi-Strategy AI Recognition</p>
                         </div>
                     </div>
                 )}
@@ -238,31 +257,33 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
              className="w-full py-4 bg-gradient-to-r from-gold-600 to-gold-400 hover:from-gold-500 hover:to-gold-300 text-black font-black text-sm tracking-wider rounded-xl shadow-[0_0_20px_rgba(250,204,21,0.2)] hover:shadow-[0_0_30px_rgba(250,204,21,0.4)] transition-all transform hover:-translate-y-0.5 flex items-center justify-center gap-3"
            >
              <BrainCircuit className="w-5 h-5" />
-             INITIATE ANALYSIS
+             EXECUTE NEURAL ANALYSIS
            </button>
         )}
 
         {status === AnalysisStatus.ERROR && (
-           <div className="bg-red-500/10 border border-red-500/30 text-red-200 p-4 rounded-xl flex items-start gap-3 backdrop-blur-md">
-                <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5" />
-                <div className="flex-1">
-                    <p className="text-sm font-bold text-red-400 mb-1">Analysis Interrupted</p>
-                    <p className="text-xs text-slate-300 leading-relaxed">{errorMsg}</p>
-                    {errorMsg.includes('API') && (
-                        <button onClick={onOpenSettings} className="mt-2 text-xs bg-red-500/20 px-3 py-1 rounded text-white hover:bg-red-500/30 transition">
-                            Fix Settings
-                        </button>
-                    )}
+           <div className="bg-red-500/10 border border-red-500/30 text-red-200 p-4 rounded-xl flex items-start gap-3 backdrop-blur-md animate-in fade-in zoom-in-95">
+                <div className="bg-red-500/20 p-2 rounded-lg">
+                  <AlertTriangle className="w-5 h-5 text-red-500" />
                 </div>
-                <button onClick={() => setStatus(AnalysisStatus.IDLE)} className="text-slate-400 hover:text-white"><Settings className="w-4 h-4" /></button>
+                <div className="flex-1">
+                    <p className="text-sm font-bold text-red-400 mb-1">Signal Interrupted</p>
+                    <p className="text-xs text-slate-300 leading-relaxed font-mono bg-black/30 p-2 rounded border border-white/5">{errorMsg}</p>
+                    <div className="mt-3 flex gap-2">
+                        <button onClick={runAnalysis} className="text-xs bg-gold-500/20 border border-gold-500/30 px-3 py-1.5 rounded text-gold-400 hover:bg-gold-500/30 transition flex items-center gap-1.5 font-bold">
+                            <RefreshCcw className="w-3 h-3" /> Re-Scan
+                        </button>
+                        <button onClick={onOpenSettings} className="text-xs bg-white/5 border border-white/10 px-3 py-1.5 rounded text-white hover:bg-white/10 transition">
+                            Settings
+                        </button>
+                    </div>
+                </div>
            </div>
         )}
 
-        {/* Results Display - Elegant Card */}
         {result && status === AnalysisStatus.COMPLETED && (
           <div className="flex-1 flex flex-col animate-in slide-in-from-bottom-6 duration-500">
              
-             {/* Signal Badge */}
              <div className={`relative p-5 rounded-t-2xl border-b border-white/5 flex items-center justify-between overflow-hidden ${
                  result.type === 'BUY' ? 'bg-gradient-to-r from-green-900/40 to-slate-900' :
                  result.type === 'SELL' ? 'bg-gradient-to-r from-red-900/40 to-slate-900' : 
@@ -289,59 +310,56 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
                                  {strategy}
                              </span>
                              <span className="text-[10px] text-gold-500 font-mono">
-                                 LOT: {result.lotSize}
+                                 LOT: {result.lotSize || 'CALC...'}
                              </span>
                          </div>
                      </div>
                  </div>
 
                  <div className="flex flex-col gap-2">
-                     <button onClick={copyToClipboard} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-slate-300 transition border border-white/5">
+                     <button onClick={copyToClipboard} title="Copy Signal" className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-slate-300 transition border border-white/5">
                          {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                      </button>
                      <button onClick={() => {setResult(null); setPreview(null); setStatus(AnalysisStatus.IDLE)}} className="text-[10px] text-slate-500 hover:text-white underline text-center">
-                        Reset
+                        Clear
                      </button>
                  </div>
              </div>
 
-             {/* Data Grid */}
              <div className="bg-black/20 backdrop-blur-sm border-x border-white/5 p-4 grid grid-cols-2 gap-4">
                  <div className="space-y-1">
                      <p className="text-[10px] text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                         <Target className="w-3 h-3" /> Entry Zone
+                         <Target className="w-3 h-3" /> Entry Price
                      </p>
                      <p className="text-xl font-mono font-bold text-white tracking-wide">{result.entryPrice}</p>
                  </div>
                  <div className="space-y-1 text-right">
                      <p className="text-[10px] text-slate-500 uppercase tracking-widest flex items-center justify-end gap-1">
-                         <Shield className="w-3 h-3 text-red-500" /> Invalidation
+                         <Shield className="w-3 h-3 text-red-500" /> Stop Loss
                      </p>
                      <p className="text-xl font-mono font-bold text-red-400 tracking-wide">{result.stopLoss}</p>
                  </div>
              </div>
 
-             {/* Targets Strip */}
              <div className="grid grid-cols-3 divide-x divide-white/5 bg-slate-900/40 border-y border-white/5">
                  <div className="p-3 text-center">
                      <span className="text-[9px] text-slate-500 block mb-1">TP1</span>
                      <span className="font-mono text-green-300 text-sm">{result.takeProfit1}</span>
                  </div>
                  <div className="p-3 text-center bg-green-500/5">
-                     <span className="text-[9px] text-green-500/70 block mb-1 font-bold">TP2 (MAIN)</span>
+                     <span className="text-[9px] text-green-500/70 block mb-1 font-bold">TP2 (PRO)</span>
                      <span className="font-mono text-green-400 font-bold text-sm">{result.takeProfit2}</span>
                  </div>
                  <div className="p-3 text-center">
                      <span className="text-[9px] text-slate-500 block mb-1">TP3</span>
-                     <span className="font-mono text-green-500 text-sm">{result.takeProfit3 || 'OPEN'}</span>
+                     <span className="font-mono text-green-500 text-sm">{result.takeProfit3 || '---'}</span>
                  </div>
              </div>
 
-             {/* Analysis Body */}
              <div className="flex-1 bg-slate-900/30 rounded-b-2xl p-4 overflow-y-auto custom-scrollbar border-x border-b border-white/5">
                  <div className="mb-4">
                      <h4 className="text-[10px] text-gold-500 uppercase font-bold mb-2 flex items-center gap-2">
-                         <Layers className="w-3 h-3" /> Market Context
+                         <Layers className="w-3 h-3" /> Strategic Reasoning
                      </h4>
                      <p className="text-xs text-slate-300 leading-relaxed text-right bg-black/20 p-3 rounded border border-white/5" dir="rtl">
                          {result.reasoning}
@@ -360,7 +378,6 @@ const ImageAnalyzer: React.FC<ImageAnalyzerProps> = ({ onTradeGenerated, account
         )}
       </div>
 
-      {/* Glow Effects */}
       <div className="absolute top-0 right-0 w-40 h-40 bg-gold-500/10 rounded-full blur-[60px] pointer-events-none"></div>
       <div className="absolute bottom-0 left-0 w-40 h-40 bg-blue-500/10 rounded-full blur-[60px] pointer-events-none"></div>
     </div>
